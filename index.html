@@ -1,0 +1,261 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+  <title>福井県好感度詳細（データ出典：福井県観光連盟）</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.6/dayjs.min.js"></script>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+</head><body>
+  <h1 id="title"></h1>
+  <div id="opt">
+    <div id=prefbox></div>
+    <div id="divsels"></div>
+  </div>
+  <div id=divpie></div>
+  <span>相関関係</span>
+  <div id="chart-select"></div>
+  <div id="chart" style="width:auto;height:auto;"></div>
+  <hr />
+  <a href=https://code4fukui.github.io/fukui-kanko-survey/all.csv target="_blank">CSVデータ</a>
+  (<a href=https://github.com/code4fukui/fukui-kanko-survey target="_blank">data on GitHub</a>, <a href="https://github.com/EiichiMiyagawa/favourable-impression-detail" target="_blank">src on GitHub by Code for FUKUI</a>)<br>
+</div>
+
+<script type="module">
+  import { CSV } from "https://js.sabae.cc/CSV.js";
+  import { SurveySelector } from "./survey-selector.js";
+  import { ChartBar } from "https://eiichimiyagawa.github.io/chart-bar-plotly/chart-bar.js";
+  
+  // iOS14以前に関する対応（top-level await未対応のため）
+  addEventListener("load", async () => {
+    title.textContent = document.title;
+    const surveySelector = new SurveySelector();
+
+    const chartSelectBoxNum = 3;
+    
+    const url = "https://code4fukui.github.io/fukui-kanko-survey/all.csv";
+    const data = await CSV.fetch(url);
+    const csv = await CSV.toJSON(data);
+    const scoreList = {
+      "福井県内での交通手段の満足度": {
+        "とても満足": 10,
+        "満足": 8,
+        "どちらでもない": 4,
+        "不満": 2,
+        "とても不満": 0
+      },
+      
+      "満足度": {
+        "とても満足": 10,
+        "満足": 8,
+        "どちらでもない": 4,
+        "不満": 2,
+        "とても不満": 0
+      },
+      
+      "不便さ": {
+        "感じなかった": 10,
+        "感じた": 0
+      },
+      
+      "NPS": {
+        "10": 10,
+        "9": 9,
+        "8": 8,
+        "7": 7,
+        "6": 6,
+        "5": 5,
+        "4": 4,
+        "3": 3,
+        "2": 2,
+        "1": 1,
+        "0": 0
+      },
+      
+      "今後の来訪意向": {
+        "また行きたい（1年以内）": 10,
+        "機会があれば行きたい": 8,
+        "どちらともいえない":  4,
+        "あまり行きたいと思わない": 2,
+        "行きたくない": 0
+      },
+    };
+    
+    const createBarData = (key, obj) => {
+      const names = Object.values(scoreList[key]).sort((v1, v2) => {
+        if (Number(v1) < Number(v2)) {
+          return -1;
+        }
+        if (Number(v1) > Number(v2)) {
+          return 1;
+        }
+        return 0;
+      });
+      const res = {};
+      for (const name of names) {
+        res[`${name}点`] = obj[name];
+      }
+      return res;
+    };
+    
+    const show = () => {
+      divpie.innerHTML = "";
+      
+      const csv2 = surveySelector.filter(csv);
+      if (csv2.length) {
+        // 点数の分布
+        const favourableScore = {};
+        const averageList = {};
+        Object.keys(scoreList).forEach((key) => {
+          favourableScore[key] = {};
+          averageList[key] = 10;
+          Object.keys(scoreList[key]).forEach((key2) => {
+            favourableScore[key][scoreList[key][key2]] = 0;
+          });
+        });
+        csv2.forEach((c) => {
+          Object.keys(scoreList).forEach((key) => {
+            const countKey = scoreList[key][c[key]] != undefined ? scoreList[key][c[key]] : averageList[key];
+            favourableScore[key][countKey]++;
+          });
+        });
+        
+        const favourableScore2 = [];
+        Object.keys(favourableScore).forEach((key, index) => {
+          const barData = createBarData(key, favourableScore[key]);
+          const chartBar = new ChartBar(barData, {
+            width: window.innerWidth - 64
+          });
+          chartBar.id = "chart-line" + index;
+          const div2 = document.createElement("div");
+          div2.style.display = "inline-block";
+          const span = document.createElement("span");
+          span.textContent = key + ` (${csv2.length}件)`;
+          span.appendChild(document.createElement("br"));
+          div2.appendChild(span);
+          span.appendChild(document.createElement("br"));
+          div2.appendChild(chartBar);
+          divpie.append(div2);
+        });
+
+        // 点数の相関
+
+        const countChartData = (chartData, key1, key2) => {
+          if (!chartData[key1]) {
+            chartData[key1] = {};
+          }
+          
+          if (!chartData[key1][key2]) {
+            chartData[key1][key2] = 1;
+          } else {
+            chartData[key1][key2]++;
+          }
+        };
+        
+        const names = []
+    for (let i = 0; i < chartSelectBoxNum; i++) {
+      names.push(document.getElementById("chart-select" + i).value);
+    }
+    const chartData = {};
+    for (const d of csv2) {
+      for (let i = 0; i < chartSelectBoxNum - 1; i++) {
+        const key1 = scoreList[names[i]][d[names[i]]] != undefined ? scoreList[names[i]][d[names[i]]] : averageList[names[i]];
+        const key2 = scoreList[names[i + 1]][d[names[i + 1]]] != undefined ? scoreList[names[i + 1]][d[names[i + 1]]] : averageList[names[i + 1]];
+        countChartData(chartData, `${names[i]}:${key1}点`, `${names[i + 1]}:${key2}点`);
+      }
+    }
+        
+        const drawChart = () => {
+          const rows = [];
+          for (const key1 in chartData) {
+            for (const key2 in chartData[key1]) {
+              rows.push([key1, key2, chartData[key1][key2]])
+            }
+          }
+          
+          const data = new google.visualization.DataTable();
+          data.addColumn("string", "From");
+          data.addColumn("string", "To");
+          data.addColumn("number", "Count");
+          data.addRows(rows);
+          
+          // Sets chart options.
+          const options = {
+            height: 800
+          };
+          
+          // Instantiates and draws our chart, passing in some options.
+          const chart = new google.visualization.Sankey(document.getElementById("chart"));
+          chart.draw(data, options);
+        }
+        
+        google.charts.load("current", {"packages":["sankey"]});
+        google.charts.setOnLoadCallback(drawChart);
+      }
+    };
+    
+    surveySelector.createSelectElement(divsels, csv, show);
+
+    const chartSelectDiv = document.getElementById("chart-select");
+for (let i = 0; i < chartSelectBoxNum; i++) {
+  const span = document.createElement("span");
+  span.style.display = "inline-block";
+  span.textContent = "項目" + (i + 1);
+  span.appendChild(document.createElement("br"));
+  const s = document.createElement("select");
+  s.setAttribute("id", "chart-select" + i);
+  Object.keys(scoreList).forEach((sel, index) => {
+    const opt = document.createElement("option");
+    opt.textContent = sel;
+    if (i == index) {
+      opt.selected = true;
+    }
+    s.appendChild(opt);
+  });
+  s.onchange = show;
+  span.appendChild(s);
+  chartSelectDiv.appendChild(span);
+}
+
+    show();
+  });
+  
+</script>
+
+<style>
+  body {
+    text-align: center;
+    font-family: sans-serif;
+  }
+  textarea {
+    width: 70vw;
+    height: 8em;
+  }
+  #divsels {
+    margin-bottom: .5em;
+  }
+  #prefbox > * {
+    margin: .5em .2em;
+  }
+  #main {
+    text-align: center;
+    border: 3px solid #555;
+    padding: .5em;
+  }
+  .rank {
+    font-size: 200%;
+    font-weight: bold;
+  }
+  .point {
+    font-size: 150%;
+  }
+  .area {
+    font-size: 150%;
+    font-weight: bold;
+  }
+  #main div {
+    text-align: left;
+  }
+  input, label, select {
+    font-size: 14px;
+  }
+  #credit {
+    text-align: center;
+  }
+</style>
